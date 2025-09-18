@@ -1,40 +1,42 @@
-# Paste your Streamlit code below
 import streamlit as st
-import tensorflow as tf
-import numpy as np
-import cv2
+from tensorflow.keras.models import load_model
+from tensorflow.keras.preprocessing import image
 from PIL import Image
+import numpy as np
+from io import BytesIO
 
-st.title("AI / Deepfake Image Detector")
-st.write("Upload an image to check if it is AI-generated or real.")
+st.title("🧠 AI vs Real Image Detector")
 
-# Load trained model
-try:
-    model = tf.keras.models.load_model('ai_vs_real_detector.h5')
-    model_ready = True
-except:
-    st.warning("Model not found. Predictions will be available once training is complete.")
-    model_ready = False
+@st.cache_resource  # Updated caching method
+def load_full_model():
+    model_path = "ai_vs_real_cnn_conv2d.h5"
+    model = load_model(model_path)
+    return model
 
-uploaded_file = st.file_uploader("Choose an image", type=["jpg", "png"])
+# Load model once
+with st.spinner('Loading model...'):
+    model = load_full_model()
 
-def preprocess_image(image, size=(128,128)):
-    img = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
-    img = cv2.resize(img, size)
-    img = img / 255.0
-    img = np.expand_dims(img, axis=0)
-    return img
+# Image uploader
+uploaded_file = st.file_uploader("Upload an image (jpg, png)...", type=["jpg", "png"])
 
-if uploaded_file:
-    image = Image.open(uploaded_file)
-    st.image(image, caption="Uploaded Image", use_column_width=True)
+if uploaded_file is not None:
+    img = Image.open(BytesIO(uploaded_file.read())).convert('RGB')
+    st.image(img, caption="Uploaded Image", use_container_width=True)
+    
+    # Preprocess image
+    img = img.resize((224, 224))
+    x = image.img_to_array(img)
+    x = np.expand_dims(x, axis=0)
+    x = x / 255.0
 
-    if model_ready:
-        img_array = preprocess_image(image)
-        pred = model.predict(img_array)[0][0]
-        if pred > 0.5:
-            st.error(f"Prediction: AI-generated ({pred*100:.2f}% confidence)")
-        else:
-            st.success(f"Prediction: Real ({(1-pred)*100:.2f}% confidence)")
+    st.write(f"Input shape: {x.shape}")
+
+    with st.spinner('Analyzing image...'):
+        pred = model.predict(x)[0][0]
+
+    if pred > 0.5:
+        st.success(f"✅ Real Image (Confidence: {pred:.2f})")
     else:
-        st.info("Model is still training. Predictions will be available once training is complete.")
+        st.error(f"⚠️ AI-generated Image (Confidence: {1 - pred:.2f})")
+
